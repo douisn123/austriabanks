@@ -1,4 +1,4 @@
-import os
+﻿import os
 import re
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -28,7 +28,10 @@ app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 app.config.update(SECRET_KEY=os.environ["SECRET_KEY"], PERMANENT_SESSION_LIFETIME=timedelta(days=30),
                   SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax", BABEL_DEFAULT_LOCALE="de")
-DB_PATH = os.environ.get("DB_PATH") or ("/tmp/danubia.db" if os.environ.get("VERCEL") else str(Path(__file__).parent / "danubia.db"))
+if os.environ.get("VERCEL"):
+    DB_PATH = "/tmp/danubia.db"
+else:
+    DB_PATH = os.environ.get("DB_PATH") or str(Path(__file__).parent / "danubia.db")
 db = Database(DB_PATH)
 
 
@@ -73,7 +76,7 @@ def valid_iban(iban):
 
 
 def category_label(c):
-    return {"transfer": _("Überweisung"), "standing": _("Dauerauftrag"), "card": _("Kartenzahlung"), "debit": _("Lastschrift"),
+    return {"transfer": _("Ãœberweisung"), "standing": _("Dauerauftrag"), "card": _("Kartenzahlung"), "debit": _("Lastschrift"),
             "salary": _("Gehalt"), "savings": _("Umbuchung"), "loan": _("Kreditrate")}.get(c, c)
 
 
@@ -82,16 +85,16 @@ def note_text(n):
     if "amount" in p:
         p["amount"] = money(p["amount"])
     msgs = {
-        "transfer_done": _("Überweisung über %(amount)s an %(name)s durchgeführt."),
-        "email_sent": _("Bestätigung an %(name)s (%(email)s) gesendet."),
-        "email_failed": _("Bestätigung an %(name)s konnte nicht gesendet werden."),
+        "transfer_done": _("Ãœberweisung Ã¼ber %(amount)s an %(name)s durchgefÃ¼hrt."),
+        "email_sent": _("BestÃ¤tigung an %(name)s (%(email)s) gesendet."),
+        "email_failed": _("BestÃ¤tigung an %(name)s konnte nicht gesendet werden."),
         "card_used": _("Karte ****%(last4)s bei %(merchant)s verwendet: %(amount)s."),
-        "loan_due": _("Nächste Rate %(name)s: %(amount)s wird in Kürze fällig."),
+        "loan_due": _("NÃ¤chste Rate %(name)s: %(amount)s wird in KÃ¼rze fÃ¤llig."),
         "salary": _("Gehaltseingang: %(amount)s."),
         "card_blocked": _("Karte ****%(last4)s wurde gesperrt."),
         "card_unblocked": _("Karte ****%(last4)s wurde entsperrt."),
         "savings_moved": _("%(amount)s auf %(name)s umgebucht.") if p.get("direction") == "deposit" else _("%(amount)s von %(name)s umgebucht."),
-        "loan_applied": _("Kreditanfrage über %(amount)s eingereicht."),
+        "loan_applied": _("Kreditanfrage Ã¼ber %(amount)s eingereicht."),
     }
     return msgs.get(n["type"], n["type"]) % p
 
@@ -158,7 +161,7 @@ def login():
             session.permanent = True
             session["uid"] = u["id"]
             return redirect(url_for("dashboard"))
-        flash(_("Verfügernummer oder Passwort ist falsch."), "error")
+        flash(_("VerfÃ¼gernummer oder Passwort ist falsch."), "error")
     return render_template("login.html")
 
 
@@ -172,7 +175,7 @@ def logout():
 @login_required
 def demo_reset():
     reset_user(db, g.user["id"])
-    flash(_("Demo-Daten zurückgesetzt"), "success")
+    flash(_("Demo-Daten zurÃ¼ckgesetzt"), "success")
     return redirect(url_for("dashboard"))
 
 
@@ -193,7 +196,7 @@ def profile():
     if request.method == "POST":
         data = {k: request.form.get(k, "").strip()[:120] for k in ["name", "address", "zip", "city", "email", "phone"]}
         if not all(data.values()) or not re.fullmatch(r"\S+@\S+\.\S+", data["email"]):
-            flash(_("Bitte alle Felder korrekt ausfüllen."), "error")
+            flash(_("Bitte alle Felder korrekt ausfÃ¼llen."), "error")
         else:
             db.users.update_one({"id": g.user["id"]}, {"$set": data})
             flash(_("Gespeichert"), "success")
@@ -208,9 +211,9 @@ def ben_from_form():
     if len(f["name"]) < 2:
         return None, _("Name ist ein Pflichtfeld.")
     if not valid_iban(f["iban"]):
-        return None, _("Ungültige IBAN")
+        return None, _("UngÃ¼ltige IBAN")
     if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", f["email"]):
-        return None, _("Ungültige E-Mail-Adresse")
+        return None, _("UngÃ¼ltige E-Mail-Adresse")
     return f, None
 
 
@@ -240,7 +243,7 @@ def ben_save():
     else:
         bid = uid()
         db.beneficiaries.insert_one({"id": bid, "user_id": g.user["id"], **data, "created_at": now().isoformat()})
-    flash(_("Empfänger gespeichert"), "success")
+    flash(_("EmpfÃ¤nger gespeichert"), "success")
     if request.form.get("next") == "transfer":
         return redirect(url_for("transfer", beneficiary_id=bid))
     return redirect(url_for("beneficiaries"))
@@ -252,7 +255,7 @@ def ben_delete(bid):
     own("beneficiaries", bid)
     db.beneficiaries.delete_one({"id": bid})
     db.standing_orders.delete_many({"beneficiary_id": bid, "user_id": g.user["id"]})
-    flash(_("Gelöscht"), "success")
+    flash(_("GelÃ¶scht"), "success")
     return redirect(url_for("beneficiaries"))
 
 
@@ -264,19 +267,19 @@ class TransferError(Exception):
 def execute_transfer(account, ben, amount, purpose, category="transfer"):
     lang = get_lang()
     if amount <= 0:
-        raise TransferError(_("Bitte einen gültigen Betrag eingeben."))
+        raise TransferError(_("Bitte einen gÃ¼ltigen Betrag eingeben."))
     if account["balance"] < amount:
-        raise TransferError(_("Nicht genügend Guthaben auf dem Konto."))
+        raise TransferError(_("Nicht genÃ¼gend Guthaben auf dem Konto."))
     day = now().date().isoformat()
     spent = list(db.transactions.aggregate([
         {"$match": {"user_id": g.user["id"], "category": {"$in": ["transfer", "standing"]}, "date": {"$gte": day}, "amount": {"$lt": 0}}},
         {"$group": {"_id": None, "s": {"$sum": "$amount"}}}]))
     if (-spent[0]["s"] if spent else 0) + amount > DAILY_TRANSFER_LIMIT:
-        raise TransferError(_("Tageslimit von € 3.000 überschritten."))
+        raise TransferError(_("Tageslimit von â‚¬ 3.000 Ã¼berschritten."))
     res = db.accounts.find_one_and_update({"id": account["id"], "balance": {"$gte": amount}}, {"$inc": {"balance": -amount}},
                                           projection=NOID, return_document=ReturnDocument.AFTER)
     if not res:
-        raise TransferError(_("Nicht genügend Guthaben auf dem Konto."))
+        raise TransferError(_("Nicht genÃ¼gend Guthaben auf dem Konto."))
     db.accounts.update_one({"id": account["id"]}, {"$set": {"balance": round(res["balance"], 2)}})
     u = g.user
     tx = {
@@ -380,7 +383,7 @@ def order_add():
     own("beneficiaries", f.get("beneficiary_id"))
     amount = to_float(f.get("amount"))
     if not (0 < amount <= DAILY_TRANSFER_LIMIT) or not f.get("purpose") or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", f.get("next_date", "")):
-        flash(_("Bitte alle Felder korrekt ausfüllen."), "error")
+        flash(_("Bitte alle Felder korrekt ausfÃ¼llen."), "error")
     else:
         db.standing_orders.insert_one({"id": uid(), "user_id": g.user["id"], "account_id": f["account_id"], "beneficiary_id": f["beneficiary_id"], "amount": amount,
                                        "purpose": f["purpose"][:140], "interval": "weekly" if f.get("interval") == "weekly" else "monthly", "next_date": f["next_date"], "active": True})
@@ -396,7 +399,7 @@ def order_action(oid, action):
         db.standing_orders.update_one({"id": oid}, {"$set": {"active": not o["active"]}})
     elif action == "delete":
         db.standing_orders.delete_one({"id": oid})
-        flash(_("Gelöscht"), "success")
+        flash(_("GelÃ¶scht"), "success")
     elif action == "execute":
         try:
             return redirect(url_for("transfer_done", tx_id=run_order(o)["id"]))
@@ -462,18 +465,18 @@ def savings():
         src, dst = (giro, sav) if deposit else (sav, giro)
         amt = to_float(request.form.get("amount"))
         if sav["type"] != "savings" or amt <= 0 or src["balance"] < amt:
-            flash(_("Nicht genügend Guthaben auf dem Konto.") if amt > 0 else _("Bitte einen gültigen Betrag eingeben."), "error")
+            flash(_("Nicht genÃ¼gend Guthaben auf dem Konto.") if amt > 0 else _("Bitte einen gÃ¼ltigen Betrag eingeben."), "error")
             return redirect(url_for("savings"))
         if not db.accounts.find_one_and_update({"id": src["id"], "balance": {"$gte": amt}}, {"$inc": {"balance": -amt}}):
-            flash(_("Nicht genügend Guthaben auf dem Konto."), "error")
+            flash(_("Nicht genÃ¼gend Guthaben auf dem Konto."), "error")
             return redirect(url_for("savings"))
         db.accounts.update_one({"id": dst["id"]}, {"$inc": {"balance": amt}})
         ts = now().isoformat()
         for acc, other, sign in [(src, dst, -1), (dst, src, 1)]:
             db.transactions.insert_one({"id": uid(), "user_id": g.user["id"], "account_id": acc["id"], "amount": sign * amt, "counterparty": other["name"],
-                                        "purpose": f"{src['name']} → {dst['name']}", "category": "savings", "date": ts, "reference": f"DNB{secrets.randbelow(9 * 10**9) + 10**9}"})
+                                        "purpose": f"{src['name']} â†’ {dst['name']}", "category": "savings", "date": ts, "reference": f"DNB{secrets.randbelow(9 * 10**9) + 10**9}"})
         notify("savings_moved", {"amount": amt, "name": sav["name"], "direction": "deposit" if deposit else "withdraw"})
-        flash(_("Umbuchung durchgeführt"), "success")
+        flash(_("Umbuchung durchgefÃ¼hrt"), "success")
         return redirect(url_for("savings"))
     accs = list(db.accounts.find({"user_id": g.user["id"]}, NOID))
     return render_template("savings.html", savings=[a for a in accs if a["type"] == "savings"], giro=next(a for a in accs if a["type"] == "checking"))
@@ -492,7 +495,7 @@ def credit():
         amount, months, rate = to_float(request.form.get("amount")), int(to_float(request.form.get("months"))), to_float(request.form.get("rate"))
         purpose = request.form.get("purpose", "").strip()[:80]
         if not (1000 <= amount <= 500000 and 6 <= months <= 360 and 0 < rate <= 20 and purpose):
-            flash(_("Bitte alle Felder korrekt ausfüllen."), "error")
+            flash(_("Bitte alle Felder korrekt ausfÃ¼llen."), "error")
         else:
             db.loan_applications.insert_one({"id": uid(), "user_id": g.user["id"], "amount": amount, "months": months, "rate": rate, "purpose": purpose,
                                              "monthly": annuity(amount, months, rate), "status": "in_review", "date": now().isoformat()})
@@ -558,3 +561,4 @@ def statement(month):
 
 if __name__ == "__main__":
     app.run(debug=True)
+
